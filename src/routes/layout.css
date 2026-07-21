@@ -1,0 +1,151 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/forms';
+@plugin '@tailwindcss/typography';
+
+@theme {
+	--color-quest-bg: var(--quest-bg);
+	--color-quest-surface: var(--quest-surface);
+	--color-quest-muted: var(--quest-muted);
+	--color-quest-text: var(--quest-text);
+	--color-quest-text-soft: var(--quest-text-soft);
+	--color-quest-inverse: var(--quest-inverse);
+	--color-quest-inverse-text: var(--quest-inverse-text);
+	--color-quest-blue: var(--quest-blue);
+	--color-quest-blue-soft: var(--quest-blue-soft);
+	--color-quest-yellow: var(--quest-yellow);
+	--color-quest-green: var(--quest-green);
+	--color-quest-green-soft: var(--quest-green-soft);
+	--color-quest-red: var(--quest-red);
+	--color-quest-border: var(--quest-border);
+	--shadow-panel: 0 0.35rem 1.25rem rgba(0, 0, 0, 0.35);
+	--shadow-arrow: 0 0.25rem 0.85rem rgba(0, 0, 0, 0.28);
+	--font-serif: 'Twemoji Country Flags', Merriweather, Georgia, serif;
+	--font-sans:
+		'Twemoji Country Flags', Roboto, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+		'Segoe UI', sans-serif;
+}
+
+:root {
+	color-scheme: dark;
+	--quest-bg: #282828;
+	--quest-surface: #212121;
+	--quest-muted: #545454;
+	--quest-text: #ebdbb2;
+	--quest-text-soft: #efe2c1;
+	--quest-inverse: #ebdbb2;
+	--quest-inverse-text: #282828;
+	--quest-blue: #83a598;
+	--quest-blue-soft: #d2dded;
+	--quest-yellow: #fabd2f;
+	--quest-green: #b8bb26;
+	--quest-green-soft: #8ec07c;
+	--quest-red: #fb4934;
+	--quest-border: rgba(255, 255, 255, 0.14);
+	--quest-map-stroke: #212121;
+	--quest-map-hover: #efe2c1;
+	--quest-map-hover-shadow: rgba(235, 219, 178, 0.35);
+	--quest-helper: #ffffff;
+	--quest-found: #545454;
+	background: var(--quest-bg);
+	color: var(--quest-text);
+	font-family: var(--font-sans);
+	font-synthesis: none;
+	text-rendering: optimizeLegibility;
+}
+
+:root.light {
+	color-scheme: light;
+	--quest-bg: #fff4df;
+	--quest-surface: #fffaf1;
+	--quest-muted: #9c7f6d;
+	--quest-text: #30231d;
+	--quest-text-soft: #5a4033;
+	--quest-inverse: #30231d;
+	--quest-inverse-text: #fff4df;
+	--quest-blue: #0f7f7a;
+	--quest-blue-soft: #315f58;
+	--quest-yellow: #d38300;
+	--quest-green: #4c8f22;
+	--quest-green-soft: #2f9b65;
+	--quest-red: #c64b38;
+	--quest-border: rgba(48, 35, 29, 0.14);
+	--quest-map-stroke: #ead4b4;
+	--quest-map-hover: #3a2921;
+	--quest-map-hover-shadow: rgba(58, 41, 33, 0.22);
+	--quest-helper: #30231d;
+	--quest-found: #d9c7ad;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	min-width: 320px;
+	min-height: 100vh;
+	background: var(--quest-bg);
+}
+
+button {
+	cursor: pointer;
+	font: inherit;
+}
+
+svg {
+	display: block;
+	touch-action: none;
+}
+
+path {
+	stroke: var(--quest-map-stroke);
+	stroke-width: 0.12px;
+	transition:
+		fill 120ms ease,
+		opacity 120ms ease,
+		filter 120ms ease;
+}
+
+path:not(.found):not(.disabled) {
+	cursor: pointer;
+	pointer-events: visiblePainted;
+}
+
+path:not(.found):not(.disabled):hover {
+	fill: var(--quest-map-hover);
+	filter: drop-shadow(0 0 5px var(--quest-map-hover-shadow));
+}
+
+path.helper {
+	fill: transparent;
+	stroke: var(--quest-helper);
+	stroke-width: 1.5px;
+	opacity: 0.9;
+}
+
+path.helper:not(.found):not(.disabled):hover {
+	fill: var(--quest-helper);
+	opacity: 0.85;
+}
+
+.country-blue {
+	fill: var(--quest-blue);
+}
+
+.country-yellow {
+	fill: var(--quest-yellow);
+}
+
+.country-green {
+	fill: var(--quest-green-soft);
+}
+
+.country-red {
+	fill: var(--quest-red);
+}
+
+.found,
+.disabled {
+	fill: var(--quest-found);
+	opacity: 0.78;
+}
