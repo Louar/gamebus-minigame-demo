@@ -6,40 +6,18 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
+	import type {
+		EmbeddedActivityMessage,
+		EmbeddedInputCollectionsMessage,
+		EmbeddedNavigateMessage,
+		ResolvedInputCollections
+	} from '$lib/schemas';
 	import { cn } from '$lib/utils';
 	import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
-	type ActivityTemplate = {
-		reference?: string;
-		name?: string | null;
-	};
-
-	type EmbeddedTask = {
-		id?: string;
-		title?: string | null;
-		type?: string | null;
-		activityTemplates?: ActivityTemplate[];
-		[key: string]: unknown;
-	};
-
-	type ActivityPayload = {
-		type: 'ACTIVITY' | 'SILENT_ACTIVITY';
-		data: {
-			template: string;
-			start: string;
-			end: string;
-			properties: unknown[];
-		};
-	};
-
-	type ParentMessage =
-		| { type: 'TASK'; data?: EmbeddedTask }
-		| { type: 'INPUT_COLLECTIONS'; data?: unknown };
-
-	let currentTask: EmbeddedTask | undefined = $state();
-	let inputCollections: unknown = $state([]);
-	let type: ActivityPayload['type'] = $state('ACTIVITY');
-	let selectedTemplate = $state('');
+	let inputCollections: ResolvedInputCollections = $state({});
+	let type: EmbeddedActivityMessage['type'] = $state('ACTIVITY');
+	let selectedTemplate = $state('generalActivity');
 	let start = $state(toDateTimeLocal(new Date()));
 	let end = $state(toDateTimeLocal(new Date(Date.now() + 60 * 60 * 1000)));
 	let extraPropertiesYaml = $state(`- template: score
@@ -47,39 +25,12 @@
     value: 75`);
 	let sendStatus = $state('');
 	let sendStatusType: 'idle' | 'success' | 'error' = $state('idle');
+	let navigatePath = $state('/activities');
 	let editorScrollRef = $state<HTMLDivElement | null>(null);
 
-	const activityTemplates = $derived(
-		Array.isArray(currentTask?.activityTemplates) ? currentTask.activityTemplates : []
-	);
-	const hasTask = $derived(Boolean(currentTask));
-	const taskYaml = $derived(
-		currentTask ? formatYaml({ type: 'TASK', data: currentTask }) : 'No task received yet.'
-	);
 	const inputCollectionsYaml = $derived(formatYaml(inputCollections));
-	const selectedTemplateLabel = $derived(
-		(activityTemplates.find((template) => template.reference === selectedTemplate)?.name ??
-			selectedTemplate) ||
-			'No templates'
-	);
 	const extraPropertiesPreviewHtml = $derived.by(() => highlightYaml(extraPropertiesYaml ?? ''));
 	const readyMessageYaml = $derived(formatYaml({ type: 'IFRAME_READY' }));
-	const taskSchemaYaml = $derived.by(() =>
-		formatYaml({
-			type: 'TASK',
-			data: {
-				id: 'task-reference',
-				title: 'Embedded task title',
-				type: 'userTriggeredEmbedded',
-				activityTemplates: [
-					{
-						reference: '[activity-template-reference]',
-						name: 'Activity template name'
-					}
-				]
-			}
-		})
-	);
 	const inputCollectionsSchemaYaml = $derived.by(() =>
 		formatYaml({
 			type: 'INPUT_COLLECTIONS',
@@ -94,7 +45,7 @@
 	);
 	const activitySchemaYaml = $derived.by(() =>
 		formatYaml({
-			type: 'ACTIVITY | SILENT_ACTIVITY',
+			type: 'ACTIVITY',
 			data: {
 				template: 'activity-template-reference',
 				start: '2026-07-14T09:00:00.000Z',
@@ -112,12 +63,17 @@
 			}
 		})
 	);
+	const navigateSchemaYaml = $derived.by(() =>
+		formatYaml({
+			type: 'NAVIGATE',
+			data: '[route]'
+		})
+	);
 	const readyMessageHtml = $derived.by(() => highlightYaml(readyMessageYaml));
-	const taskYamlHtml = $derived.by(() => highlightYaml(taskYaml));
-	const taskSchemaHtml = $derived.by(() => highlightYaml(taskSchemaYaml));
 	const inputCollectionsYamlHtml = $derived.by(() => highlightYaml(inputCollectionsYaml));
 	const inputCollectionsSchemaHtml = $derived.by(() => highlightYaml(inputCollectionsSchemaYaml));
 	const activitySchemaHtml = $derived.by(() => highlightYaml(activitySchemaYaml));
+	const navigateSchemaHtml = $derived.by(() => highlightYaml(navigateSchemaYaml));
 
 	function highlightYaml(code: string) {
 		return highlighter.codeToHtml(code, {
@@ -156,7 +112,7 @@
 		return parsed;
 	}
 
-	function buildActivityPayload(type: ActivityPayload['type']): ActivityPayload {
+	function buildActivityPayload(type: EmbeddedActivityMessage['type']): EmbeddedActivityMessage {
 		if (!selectedTemplate) throw new Error('Select an activity template first.');
 		if (!start || !end) throw new Error('Start and end are required.');
 		const startDate = new Date(start);
@@ -169,30 +125,27 @@
 			type,
 			data: {
 				template: selectedTemplate,
-				start: startDate.toISOString(),
-				end: endDate.toISOString(),
+				start: startDate,
+				end: endDate,
 				properties: [...parseExtraProperties()]
 			}
 		};
 	}
 
-	function sendToParent(data: ActivityPayload) {
+	function sendToParent(data: EmbeddedActivityMessage) {
 		window.parent.postMessage(data, '*');
 		sendStatus = `Sent to parent at ${new Date().toLocaleString()}`;
 		sendStatusType = 'success';
 	}
 
-	function handleMessage(event: MessageEvent<ParentMessage>) {
-		if (!event.data || typeof event.data !== 'object') return;
+	function sendNavigateToParent(data: EmbeddedNavigateMessage) {
+		window.parent.postMessage(data, '*');
+		sendStatus = `Sent navigation to parent at ${new Date().toLocaleString()}`;
+		sendStatusType = 'success';
+	}
 
-		if (event.data.type === 'TASK') {
-			currentTask = event.data.data;
-			const templates = Array.isArray(event.data.data?.activityTemplates)
-				? event.data.data.activityTemplates
-				: [];
-			selectedTemplate = templates[0]?.reference ?? '';
-			return;
-		}
+	function handleMessage(event: MessageEvent<EmbeddedInputCollectionsMessage>) {
+		if (!event.data || typeof event.data !== 'object') return;
 
 		if (event.data.type === 'INPUT_COLLECTIONS') {
 			inputCollections = event.data.data ?? {};
@@ -204,15 +157,27 @@
 		sendActivity(type);
 	}
 
-	function sendActivity(type: ActivityPayload['type']) {
+	function sendActivity(type: EmbeddedActivityMessage['type']) {
 		sendStatus = '';
 		sendStatusType = 'idle';
 
 		try {
-			if (!currentTask) throw new Error('The parent has not sent a task yet.');
 			sendToParent(buildActivityPayload(type));
 		} catch (error) {
 			sendStatus = error instanceof Error ? error.message : 'Unable to return activity.';
+			sendStatusType = 'error';
+		}
+	}
+
+	function sendNavigate() {
+		sendStatus = '';
+		sendStatusType = 'idle';
+
+		try {
+			if (!navigatePath.trim()) throw new Error('Navigation path is required.');
+			sendNavigateToParent({ type: 'NAVIGATE', data: navigatePath.trim() });
+		} catch (error) {
+			sendStatus = error instanceof Error ? error.message : 'Unable to navigate parent.';
 			sendStatusType = 'error';
 		}
 	}
@@ -228,15 +193,15 @@
 <svelte:window onmessage={handleMessage} />
 
 <svelte:head>
-	<title>Embedded task</title>
+	<title>Embedded page</title>
 </svelte:head>
 
 <div class="mx-auto grid w-full max-w-6xl gap-4 p-4 md:p-6">
 	<Card.Root>
 		<Card.Header>
-			<Card.Title>Embedded task iframe protocol</Card.Title>
+			<Card.Title>Embedded page iframe protocol</Card.Title>
 			<Card.Description>
-				This child iframe receives the current task and input data from the parent, then posts
+				This child iframe receives the input data from the parent, then (optionally) posts
 				activity-shaped events back.
 			</Card.Description>
 		</Card.Header>
@@ -261,67 +226,7 @@
 
 	<Card.Root>
 		<Card.Header>
-			<Card.Title>2. Parent to child: Embedded task</Card.Title>
-			<Card.Description>
-				Sent by the parent when the embedded task is available. The child uses
-				<code>task.activityTemplates</code> to populate the template selector.
-			</Card.Description>
-		</Card.Header>
-		<Card.Content class="grid gap-4">
-			<dl class="grid gap-3 text-sm sm:grid-cols-[max-content_minmax(0,1fr)]">
-				<dt class="font-medium text-muted-foreground">Status</dt>
-				<dd>
-					{hasTask ? 'Task data received from parent.' : 'Waiting for task data from parent.'}
-				</dd>
-
-				{#if currentTask}
-					<dt class="font-medium text-muted-foreground">Title</dt>
-					<dd>{currentTask.title || 'Task'}</dd>
-
-					<dt class="font-medium text-muted-foreground">Task ID</dt>
-					<dd class="break-all">{currentTask.id || '-'}</dd>
-
-					<dt class="font-medium text-muted-foreground">Type</dt>
-					<dd>{currentTask.type || '-'}</dd>
-
-					<dt class="font-medium text-muted-foreground">Activity templates</dt>
-					<dd>
-						{activityTemplates
-							.map((template) => template.name || template.reference)
-							.filter(Boolean)
-							.join(', ') || 'None'}
-					</dd>
-				{/if}
-			</dl>
-
-			<Tabs.Root value="actual">
-				<Tabs.List>
-					<Tabs.Trigger value="actual">Current data</Tabs.Trigger>
-					<Tabs.Trigger value="schema">Schema</Tabs.Trigger>
-				</Tabs.List>
-				<Tabs.Content value="actual">
-					<div
-						class="max-h-96 overflow-auto rounded-md border bg-muted/20 p-3 text-sm hidden-scrollbar [&>pre]:m-0! [&>pre]:bg-transparent! [&>pre]:font-mono! [&>pre]:text-sm! [&>pre]:wrap-break-word [&>pre]:whitespace-pre-wrap"
-					>
-						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-						{@html taskYamlHtml}
-					</div>
-				</Tabs.Content>
-				<Tabs.Content value="schema">
-					<div
-						class="max-h-96 overflow-auto rounded-md border bg-muted/20 p-3 text-sm hidden-scrollbar [&>pre]:m-0! [&>pre]:bg-transparent! [&>pre]:font-mono! [&>pre]:text-sm! [&>pre]:wrap-break-word [&>pre]:whitespace-pre-wrap"
-					>
-						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-						{@html taskSchemaHtml}
-					</div>
-				</Tabs.Content>
-			</Tabs.Root>
-		</Card.Content>
-	</Card.Root>
-
-	<Card.Root>
-		<Card.Header>
-			<Card.Title>3. Parent to child: Input data</Card.Title>
+			<Card.Title>2. Parent to child: Input data</Card.Title>
 			<Card.Description>
 				Optionally sent by the parent when the input collections requested by the task are
 				available.
@@ -355,10 +260,10 @@
 
 	<Card.Root>
 		<Card.Header>
-			<Card.Title>4. Child to parent: Activity</Card.Title>
+			<Card.Title>3. Child to parent: Activity (optional)</Card.Title>
 			<Card.Description>
-				Sent by the child after submitting the form. Use <code>ACTIVITY</code> to save and close the
-				modal, or <code>SILENT_ACTIVITY</code> to save without closing it. In this demo, the
+				Sent by the child after submitting the form. Use <code>ACTIVITY</code> to save an activity.
+				In this demo, the
 				<code>data.properties</code> array can be entered as YAML, using the editor below.
 			</Card.Description>
 		</Card.Header>
@@ -389,33 +294,14 @@
 							</Select.Trigger>
 							<Select.Content>
 								<Select.Item value="ACTIVITY">ACTIVITY</Select.Item>
-								<Select.Item value="SILENT_ACTIVITY">SILENT_ACTIVITY</Select.Item>
+								<Select.Item value="SILENT_ACTIVITY" disabled>SILENT_ACTIVITY</Select.Item>
 							</Select.Content>
 						</Select.Root>
 					</div>
 
 					<div class="grid gap-2">
 						<Label for="template">Activity template</Label>
-						<Select.Root
-							type="single"
-							bind:value={selectedTemplate}
-							disabled={activityTemplates.length === 0}
-						>
-							<Select.Trigger id="template" class="w-full">
-								<span data-slot="select-value" class="truncate">
-									{selectedTemplateLabel}
-								</span>
-							</Select.Trigger>
-							<Select.Content>
-								{#each activityTemplates as template (template.reference)}
-									{#if template.reference}
-										<Select.Item value={template.reference}>
-											{template.name || template.reference}
-										</Select.Item>
-									{/if}
-								{/each}
-							</Select.Content>
-						</Select.Root>
+						<Input id="template" bind:value={selectedTemplate} required />
 					</div>
 
 					<div class="grid gap-2">
@@ -446,8 +332,7 @@
 							bind:value={extraPropertiesYaml}
 							spellcheck="false"
 							class="relative z-10 h-full w-full resize-none overflow-auto bg-transparent p-3 font-mono text-sm text-transparent caret-foreground outline-none"
-							onscroll={handleYamlScroll}
-						></textarea>
+							onscroll={handleYamlScroll}></textarea>
 					</div>
 					<p class="text-sm text-muted-foreground">
 						This YAML must parse to an array and is sent as <code>data.properties</code>.
@@ -469,6 +354,51 @@
 					{/if}
 				</div>
 			</form>
+		</Card.Content>
+	</Card.Root>
+
+	<Card.Root>
+		<Card.Header>
+			<Card.Title>4. Child to parent: Navigate (optional)</Card.Title>
+			<Card.Description>
+				Sent by the child when the parent app should navigate to another page. The
+				<code>data</code> value must be an internal path.
+			</Card.Description>
+		</Card.Header>
+		<Card.Content class="grid gap-4">
+			<Tabs.Root value="schema">
+				<Tabs.List>
+					<Tabs.Trigger value="schema">Schema</Tabs.Trigger>
+				</Tabs.List>
+				<Tabs.Content value="schema">
+					<div
+						class="max-h-96 overflow-auto rounded-md border bg-muted/20 p-3 text-sm hidden-scrollbar [&>pre]:m-0! [&>pre]:bg-transparent! [&>pre]:font-mono! [&>pre]:text-sm! [&>pre]:wrap-break-word [&>pre]:whitespace-pre-wrap"
+					>
+						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+						{@html navigateSchemaHtml}
+					</div>
+				</Tabs.Content>
+			</Tabs.Root>
+
+			<div class="grid gap-2">
+				<Label for="navigatePath">Navigation path</Label>
+				<Input id="navigatePath" bind:value={navigatePath} placeholder="/activities" />
+			</div>
+
+			<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+				<Button type="button" onclick={sendNavigate}>Navigate parent</Button>
+				{#if sendStatus}
+					<p
+						class={cn('text-sm', {
+							'text-muted-foreground': sendStatusType === 'idle',
+							'text-emerald-700 dark:text-emerald-400': sendStatusType === 'success',
+							'text-destructive': sendStatusType === 'error'
+						})}
+					>
+						{sendStatus}
+					</p>
+				{/if}
+			</div>
 		</Card.Content>
 	</Card.Root>
 </div>
